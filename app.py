@@ -34,8 +34,7 @@ def load_model():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 
     model = AutoModelForSequenceClassification.from_pretrained(
-        MODEL_PATH,
-        low_cpu_mem_usage=True
+        MODEL_PATH
     )
 
     model.eval()
