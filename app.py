@@ -1,9 +1,25 @@
+import os
+
+# =========================
+# 🔥 RESOURCE CONTROL (WAJIB)
+# =========================
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+
 import streamlit as st
 import torch
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import re
 import pandas as pd
+import threading
+
+# limit thread torch
+torch.set_num_threads(1)
+
+# lock untuk multi-user (anti crash)
+lock = threading.Lock()
 
 # =========================
 # 1. MODEL PATH (HUGGINGFACE)
@@ -16,8 +32,15 @@ MODEL_PATH = "iamviel/indobert-emotion"
 @st.cache_resource
 def load_model():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
+
+    model = AutoModelForSequenceClassification.from_pretrained(
+        MODEL_PATH,
+        low_cpu_mem_usage=True
+    )
+
     model.eval()
+    model.to("cpu")  # pastikan CPU only
+
     return tokenizer, model
 
 tokenizer, model = load_model()
@@ -55,6 +78,7 @@ if st.button("Predict"):
 
     if text_input.strip() == "":
         st.warning("Masukkan teks dulu")
+
     else:
         clean_text = preprocess_text(text_input)
 
@@ -63,13 +87,15 @@ if st.button("Predict"):
             return_tensors="pt",
             truncation=True,
             padding=True,
-            max_length=64
+            max_length=48  # lebih ringan dari 64
         )
 
-        with torch.no_grad():
-            outputs = model(**inputs)
-            probs = F.softmax(outputs.logits, dim=1)
-            pred_id = torch.argmax(probs, dim=1).item()
+        # 🔥 LOCK untuk handle multi-device
+        with lock:
+            with torch.no_grad():
+                outputs = model(**inputs)
+                probs = F.softmax(outputs.logits, dim=1)
+                pred_id = torch.argmax(probs, dim=1).item()
 
         predicted_label = labels[pred_id]
         confidence = probs[0][pred_id].item()
